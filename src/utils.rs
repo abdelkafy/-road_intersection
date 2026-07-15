@@ -1,34 +1,67 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// TODO — Person A implements: is_ahead(), update_turning_direction()
-// TODO — Person B implements: draw_intersection_lines(), draw_corrected_lights(),
-//                             handle_input()
-// ─────────────────────────────────────────────────────────────────────────────
-
 use std::process::exit;
 use macroquad::prelude::*;
+use ::rand::seq::SliceRandom;
 use crate::types::*;
 
-/// [Person B] Draw the 6 white lane-divider lines (3 vertical + 3 horizontal).
-pub fn draw_intersection_lines(_center: Vec2) {
+const LANE_OFFSET: f32 = 20.0; 
+const ROAD_HALF:   f32 = 40.0; // half the total road width
+const CAR_SPEED:   f32 = 2.0;
+
+const COLOR_STRAIGHT: Color = GREEN;
+const COLOR_RIGHT:    Color = YELLOW;
+const COLOR_LEFT:     Color = RED;
+
+pub fn draw_intersection_lines(center: Vec2) {
     todo!("Person B implements this")
 }
 
-/// [Person B] Draw 4 traffic light squares (30×30px). GREEN if active, RED otherwise.
-pub fn draw_corrected_lights(_center: Vec2, _active: Option<Origin>) {
+pub fn draw_corrected_lights(center: Vec2, active: Option<Origin>) {
     todo!("Person B implements this")
 }
 
-/// [Person A] Returns true if `other` is directly ahead of `pos` in the direction of `speed`.
-pub fn is_ahead(_pos: Vec2, _speed: Vec2, _other: Vec2) -> bool {
-    todo!("Person A implements this")
+pub fn is_ahead(pos: Vec2, speed: Vec2, other: Vec2) -> bool {
+    let to_other = other - pos;
+    let forward = to_other.dot(speed);
+    if forward <= 0.0 { return false; }
+    let speed_sq = speed.dot(speed);
+    if speed_sq < 0.001 { return false; }
+    let lateral_sq = to_other.dot(to_other) - (forward * forward) / speed_sq;
+    lateral_sq < LANE_OFFSET * LANE_OFFSET
 }
 
-/// [Person A] Rotate car speed vector at the correct turn point, mark `turned = true`.
-pub fn update_turning_direction(_car: &mut Car, _center: Vec2) {
-    todo!("Person A implements this")
+pub fn update_turning_direction(car: &mut Car, center: Vec2) {
+    let cx = center.x;
+    let cy = center.y;
+
+    let reached = match (car.origin, car.route) {
+        (Origin::North, Route::Right)    => car.pos.y >= cy - LANE_OFFSET,
+        (Origin::North, _)               => car.pos.y >= cy + LANE_OFFSET,
+        (Origin::South, Route::Right)    => car.pos.y <= cy + LANE_OFFSET,
+        (Origin::South, _)               => car.pos.y <= cy - LANE_OFFSET,
+        (Origin::East,  Route::Right)    => car.pos.x >= cx - LANE_OFFSET,
+        (Origin::East,  _)               => car.pos.x >= cx + LANE_OFFSET,
+        (Origin::West,  Route::Right)    => car.pos.x <= cx + LANE_OFFSET,
+        (Origin::West,  _)               => car.pos.x <= cx - LANE_OFFSET,
+    };
+    if !reached { return; }
+
+    let mag = car.speed.length();
+
+    match (car.origin, car.route) {
+        (Origin::North, Route::Right) => { car.speed = vec2(-mag,  0.0); }
+        (Origin::North, Route::Left)  => { car.speed = vec2( mag,  0.0); }
+        (Origin::South, Route::Right) => { car.speed = vec2( mag,  0.0); }
+        (Origin::South, Route::Left)  => { car.speed = vec2(-mag,  0.0); }
+        (Origin::East,  Route::Right) => { car.speed = vec2( 0.0,  mag); }
+        (Origin::East,  Route::Left)  => { car.speed = vec2( 0.0, -mag); }
+        (Origin::West,  Route::Right) => { car.speed = vec2( 0.0, -mag); }
+        (Origin::West,  Route::Left)  => { car.speed = vec2( 0.0,  mag); }
+        (_, Route::Straight) => {}
+    }
+    car.turned = true;
 }
 
-/// [Person B] Handle keyboard input — spawn cars via arrow keys / R / Esc.
+
 pub fn handle_input(
     _cars: &mut Vec<Car>,
     _center: Vec2,
@@ -37,3 +70,5 @@ pub fn handle_input(
 ) {
     todo!("Person B implements this")
 }
+
+

@@ -38,6 +38,7 @@ async fn main() {
 
         handle_input(&mut cars, center, lane_capacity, [n_c, s_c, e_c, w_c]);
 
+
         let ratios = HashMap::from([
             (Origin::North, n_c as f32 / lane_capacity as f32),
             (Origin::South, s_c as f32 / lane_capacity as f32),
@@ -127,6 +128,7 @@ async fn main() {
                 for j in 0..cars.len() {
                     if i != j
                         && cars[i].pos.distance(cars[j].pos) < 40.0
+                        && cars[i].speed.dot(cars[j].speed) > 0.0
                         && is_ahead(cars[i].pos, cars[i].speed, cars[j].pos)
                     {
                         can_move = false;
@@ -143,13 +145,8 @@ async fn main() {
                 }
             }
 
-            draw_rectangle(
-                cars[i].pos.x - 10.0,
-                cars[i].pos.y - 10.0,
-                20.0,
-                20.0,
-                cars[i].color,
-            );
+            draw_rectangle(cars[i].pos.x - 10.0, cars[i].pos.y - 10.0, 20.0, 20.0, cars[i].color);
+            draw_rectangle_lines(cars[i].pos.x - 10.0, cars[i].pos.y - 10.0, 20.0, 20.0, 1.5, BLACK);
 
             if cars[i].pos.x < -100.0
                 || cars[i].pos.x > screen_width()  + 100.0
@@ -162,7 +159,10 @@ async fn main() {
             }
         }
 
-        draw_text(&format!("Cars: {}", cars.len()), 10.0, 20.0, 20.0, WHITE);
+        // HUD
+        draw_text(&format!("Cars: {}", cars.len()), 10.0, 20.0, 18.0, WHITE);
+        draw_text("GREEN=Straight  YELLOW=Right  RED=Left", 10.0, 42.0, 16.0, WHITE);
+        draw_text("Up=South  Down=North  Right=West  Left=East  R=Random  Esc=Quit", 10.0, 62.0, 16.0, WHITE);
 
         next_frame().await
     }

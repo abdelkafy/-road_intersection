@@ -1,454 +1,169 @@
+mod types;
+mod utils;
+
 use macroquad::prelude::*;
 use std::collections::HashMap;
+use types::*;
+use utils::*;
 
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-enum Direction {
-    North,
-    South,
-    East,
-    West,
-}
-
-
-#[derive(Clone, Copy)]
-enum Route {
-    Straight,
-    Left,
-    Right,
-}
-
-
-struct Car {
-    pos: Vec2,
-    velocity: Vec2,
-    direction: Direction,
-    route: Route,
-    color: Color,
-    turned: bool,
-}
-
-
-fn window_conf() -> Conf {
+fn road_intersection() -> Conf {
     Conf {
-        window_title: "Road Intersection - Step 4".to_string(),
-        window_width: 800,
-        window_height: 600,
+        window_title: "road_intersection".to_string(),
         window_resizable: false,
         ..Default::default()
     }
 }
 
-
-
-#[macroquad::main(window_conf)]
+#[macroquad::main(road_intersection)]
 async fn main() {
-
     let mut cars: Vec<Car> = Vec::new();
+    let mut active_green: Option<Origin> = None;
+    let mut green_timer = 0.0_f32;
 
-    let mut green: Option<Direction> = None;
+    const MIN_GREEN_TIME: f32 = 0.1;
+    const CENTER_HALF: f32 = 55.0;
 
-    let mut green_timer = 0.0;
-
-
-    const MIN_GREEN_TIME:f32 = 2.0;
-
+    let lane_length = 400.0_f32;
+    let vehicle_length = 20.0_f32;
+    let safety_gap = 25.0_f32;
+    let lane_capacity = (lane_length / (vehicle_length + safety_gap)) as usize;
 
     loop {
+        let center = vec2(screen_width() / 2.0, screen_height() / 2.0);
 
-        let center =
-            vec2(
-                screen_width()/2.0,
-                screen_height()/2.0
-            );
+        let n_c = cars.iter().filter(|c| c.origin == Origin::North && !c.turned).count();
+        let s_c = cars.iter().filter(|c| c.origin == Origin::South && !c.turned).count();
+        let e_c = cars.iter().filter(|c| c.origin == Origin::East  && !c.turned).count();
+        let w_c = cars.iter().filter(|c| c.origin == Origin::West  && !c.turned).count();
 
+        handle_input(&mut cars, center, lane_capacity, [n_c, s_c, e_c, w_c]);
 
-        handle_spawn(
-            &mut cars,
-            center
-        );
-
-
-
-        let counts =
-        HashMap::from([
-            (
-                Direction::North,
-                cars.iter()
-                .filter(|c| c.direction==Direction::North)
-                .count()
-            ),
-
-            (
-                Direction::South,
-                cars.iter()
-                .filter(|c| c.direction==Direction::South)
-                .count()
-            ),
-
-            (
-                Direction::East,
-                cars.iter()
-                .filter(|c| c.direction==Direction::East)
-                .count()
-            ),
-
-            (
-                Direction::West,
-                cars.iter()
-                .filter(|c| c.direction==Direction::West)
-                .count()
-            ),
+        let ratios = HashMap::from([
+            (Origin::North, n_c as f32 / lane_capacity as f32),
+            (Origin::South, s_c as f32 / lane_capacity as f32),
+            (Origin::East,  e_c as f32 / lane_capacity as f32),
+            (Origin::West,  w_c as f32 / lane_capacity as f32),
         ]);
 
+        let center_count = cars
+            .iter()
+            .filter(|c| {
+                (c.pos.x - center.x).abs() < CENTER_HALF
+                    && (c.pos.y - center.y).abs() < CENTER_HALF
+            })
+            .count();
 
+        let center_empty = center_count == 0;
 
-        let dt=get_frame_time();
+        let dt = get_frame_time();
+        green_timer += dt;
 
-        green_timer+=dt;
+        let should_switch = match active_green {
+            None    => true,
+            Some(_) => center_empty && green_timer >= MIN_GREEN_TIME,
+        };
 
+        if should_switch {
+            let mut best_lane  = None;
+            let mut best_score = -1.0;
 
+            for lane in [Origin::North, Origin::South, Origin::East, Origin::West] {
+                let cars_in_lane = match lane {
+                    Origin::North => n_c,
+                    Origin::South => s_c,
+                    Origin::East  => e_c,
+                    Origin::West  => w_c,
+                };
 
-        if green.is_none()
-            || green_timer>MIN_GREEN_TIME
-        {
+                if cars_in_lane == 0 {
+                    continue;
+                }
 
-            let mut best=None;
-            let mut max=0;
+                let score = ratios[&lane];
 
-
-            for (dir,count) in &counts {
-
-                if *count>max {
-
-                    max=*count;
-                    best=Some(*dir);
-
+                if score > best_score {
+                    best_score = score;
+                    best_lane  = Some(lane);
                 }
             }
 
-
-            if best.is_some() {
-
-                green=best;
-                green_timer=0.0;
-
+            if best_lane.is_some() {
+                active_green = best_lane;
+                green_timer  = 0.0;
             }
         }
-
-
-
-        for i in 0..cars.len() {
-
-
-            let mut move_car=true;
-
-
-            if !cars[i].turned {
-
-
-                if at_stop(
-                    &cars[i],
-                    center
-                )
-                {
-
-                    if Some(cars[i].direction)
-                        != green
-                    {
-                        move_car=false;
-                    }
-                }
-            }
-
-
-
-            if move_car {
-
-
-                for j in 0..cars.len() {
-
-
-                    if i!=j
-                    && cars[i]
-                    .pos
-                    .distance(cars[j].pos)<40.0
-                    {
-
-                        move_car=false;
-                    }
-                }
-
-            }
-
-
-
-
-            if move_car {
-
-                cars[i].pos +=
-                    cars[i].velocity * dt;
-
-
-                turn_car(
-                    &mut cars[i],
-                    center
-                );
-            }
-
-        }
-
-
-
-        cars.retain(|c|
-            c.pos.x>-100.0
-            && c.pos.x<screen_width()+100.0
-            && c.pos.y>-100.0
-            && c.pos.y<screen_height()+100.0
-        );
-
-
 
         clear_background(BLACK);
+        draw_intersection_lines(center);
+        draw_corrected_lights(center, active_green);
 
+        let mut i = 0;
+        while i < cars.len() {
+            let mut can_move = true;
+            let car_origin = cars[i].origin;
 
-        draw_roads(center);
+            if !cars[i].turned {
+                let is_at_stop = match car_origin {
+                    Origin::South => {
+                        cars[i].pos.y > center.y + 40.0 && cars[i].pos.y < center.y + 60.0
+                    }
+                    Origin::North => {
+                        cars[i].pos.y < center.y - 40.0 && cars[i].pos.y > center.y - 60.0
+                    }
+                    Origin::East => {
+                        cars[i].pos.x < center.x - 40.0 && cars[i].pos.x > center.x - 60.0
+                    }
+                    Origin::West => {
+                        cars[i].pos.x > center.x + 40.0 && cars[i].pos.x < center.x + 60.0
+                    }
+                };
 
+                if is_at_stop && Some(car_origin) != active_green {
+                    can_move = false;
+                }
+            }
 
-        draw_lights(
-            center,
-            green
-        );
+            if can_move {
+                for j in 0..cars.len() {
+                    if i != j
+                        && cars[i].pos.distance(cars[j].pos) < 40.0
+                        && is_ahead(cars[i].pos, cars[i].speed, cars[j].pos)
+                    {
+                        can_move = false;
+                        break;
+                    }
+                }
+            }
 
-
-
-        for car in &cars {
+            if can_move {
+                let sv = cars[i].speed;
+                cars[i].pos += sv;
+                if !cars[i].turned {
+                    update_turning_direction(&mut cars[i], center);
+                }
+            }
 
             draw_rectangle(
-                car.pos.x-10.0,
-                car.pos.y-10.0,
+                cars[i].pos.x - 10.0,
+                cars[i].pos.y - 10.0,
                 20.0,
                 20.0,
-                car.color
+                cars[i].color,
             );
 
+            if cars[i].pos.x < -100.0
+                || cars[i].pos.x > screen_width()  + 100.0
+                || cars[i].pos.y < -100.0
+                || cars[i].pos.y > screen_height() + 100.0
+            {
+                cars.remove(i);
+            } else {
+                i += 1;
+            }
         }
 
+        draw_text(&format!("Cars: {}", cars.len()), 10.0, 20.0, 20.0, WHITE);
 
-
-        draw_text(
-            &format!("Cars {}",cars.len()),
-            10.0,
-            25.0,
-            25.0,
-            WHITE
-        );
-
-
-
-        next_frame().await;
+        next_frame().await
     }
-}
-
-
-
-
-fn at_stop(
-    car:&Car,
-    center:Vec2
-)->bool{
-
-
-    match car.direction {
-
-
-        Direction::North =>
-            car.pos.y>center.y-120.0
-            &&
-            car.pos.y<center.y-60.0,
-
-
-        Direction::South =>
-            car.pos.y<center.y+120.0
-            &&
-            car.pos.y>center.y+60.0,
-
-
-        Direction::East =>
-            car.pos.x<center.x+120.0
-            &&
-            car.pos.x>center.x+60.0,
-
-
-        Direction::West =>
-            car.pos.x>center.x-120.0
-            &&
-            car.pos.x<center.x-60.0,
-
-    }
-
-}
-
-
-
-
-fn turn_car(
-    car:&mut Car,
-    center:Vec2
-){
-
-
-    if car.turned {
-        return;
-    }
-
-
-    if car.pos.distance(center)<40.0 {
-
-        match car.route {
-
-
-            Route::Left => {
-
-                let old=car.velocity;
-
-                car.velocity=
-                    vec2(
-                        -old.y,
-                        old.x
-                    );
-            }
-
-
-
-            Route::Right => {
-
-                let old=car.velocity;
-
-                car.velocity=
-                    vec2(
-                        old.y,
-                        -old.x
-                    );
-            }
-
-
-
-            Route::Straight=>{}
-
-        }
-
-
-        car.turned=true;
-
-    }
-
-}
-
-
-
-
-
-fn handle_spawn(
-    cars:&mut Vec<Car>,
-    center:Vec2
-){
-
-    let speed=120.0;
-
-
-    if is_key_pressed(KeyCode::Up){
-
-        cars.push(
-            Car{
-                pos:vec2(center.x,-20.0),
-                velocity:vec2(0.0,speed),
-                direction:Direction::North,
-                route:Route::Straight,
-                color:BLUE,
-                turned:false
-            }
-        );
-    }
-
-
-    if is_key_pressed(KeyCode::Down){
-
-        cars.push(
-            Car{
-                pos:vec2(center.x,screen_height()+20.0),
-                velocity:vec2(0.0,-speed),
-                direction:Direction::South,
-                route:Route::Straight,
-                color:RED,
-                turned:false
-            }
-        );
-    }
-
-}
-
-
-
-
-
-fn draw_lights(
-    center:Vec2,
-    green:Option<Direction>
-){
-
-    let positions=[
-
-        (Direction::North,vec2(center.x,40.0)),
-
-        (Direction::South,vec2(center.x,screen_height()-40.0)),
-
-        (Direction::East,vec2(screen_width()-40.0,center.y)),
-
-        (Direction::West,vec2(40.0,center.y)),
-
-    ];
-
-
-    for (dir,pos) in positions {
-
-
-        draw_circle(
-            pos.x,
-            pos.y,
-            12.0,
-            if Some(dir)==green
-            {
-                GREEN
-            }
-            else
-            {
-                RED
-            }
-        );
-
-    }
-
-}
-
-
-
-fn draw_roads(center:Vec2){
-
-    draw_rectangle(
-        center.x-90.0,
-        0.0,
-        180.0,
-        screen_height(),
-        DARKGRAY
-    );
-
-
-    draw_rectangle(
-        0.0,
-        center.y-90.0,
-        screen_width(),
-        180.0,
-        DARKGRAY
-    );
 }

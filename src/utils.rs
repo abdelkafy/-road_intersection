@@ -120,11 +120,41 @@ pub fn handle_input(
         let color = route_color(route);
         let cx = center.x;
         let cy = center.y;
+        let spawn_gap = 20.0 + 25.0 + 5.0; // vehicle_length + safety_gap + buffer
+
         let (pos, speed) = match origin {
-            Origin::North => (vec2(cx - LANE_OFFSET, 0.0),             vec2(0.0,        CAR_SPEED)),
-            Origin::South => (vec2(cx + LANE_OFFSET, screen_height()), vec2(0.0,       -CAR_SPEED)),
-            Origin::East  => (vec2(0.0,              cy + LANE_OFFSET), vec2( CAR_SPEED, 0.0)),
-            Origin::West  => (vec2(screen_width(),   cy - LANE_OFFSET), vec2(-CAR_SPEED, 0.0)),
+            Origin::North => {
+                let tail_y = cars.iter()
+                    .filter(|c| c.origin == Origin::North && !c.turned)
+                    .map(|c| c.pos.y)
+                    .fold(f32::INFINITY, f32::min);
+                let y = if tail_y.is_finite() { tail_y - spawn_gap } else { 0.0 };
+                (vec2(cx - LANE_OFFSET, y.min(-30.0)), vec2(0.0, CAR_SPEED))
+            }
+            Origin::South => {
+                let tail_y = cars.iter()
+                    .filter(|c| c.origin == Origin::South && !c.turned)
+                    .map(|c| c.pos.y)
+                    .fold(f32::NEG_INFINITY, f32::max);
+                let y = if tail_y.is_finite() { tail_y + spawn_gap } else { screen_height() };
+                (vec2(cx + LANE_OFFSET, y.max(screen_height() + 30.0)), vec2(0.0, -CAR_SPEED))
+            }
+            Origin::East => {
+                let tail_x = cars.iter()
+                    .filter(|c| c.origin == Origin::East && !c.turned)
+                    .map(|c| c.pos.x)
+                    .fold(f32::INFINITY, f32::min);
+                let x = if tail_x.is_finite() { tail_x - spawn_gap } else { 0.0 };
+                (vec2(x.min(-30.0), cy + LANE_OFFSET), vec2(CAR_SPEED, 0.0))
+            }
+            Origin::West => {
+                let tail_x = cars.iter()
+                    .filter(|c| c.origin == Origin::West && !c.turned)
+                    .map(|c| c.pos.x)
+                    .fold(f32::NEG_INFINITY, f32::max);
+                let x = if tail_x.is_finite() { tail_x + spawn_gap } else { screen_width() };
+                (vec2(x.max(screen_width() + 30.0), cy - LANE_OFFSET), vec2(-CAR_SPEED, 0.0))
+            }
         };
         cars.push(Car { pos, speed, origin, route, color, turned: false });
     }

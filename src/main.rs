@@ -18,9 +18,11 @@ fn road_intersection() -> Conf {
 async fn main() {
     let mut cars: Vec<Car> = Vec::new();
     let mut active_green: Option<Origin> = None;
+    let mut last_green:   Option<Origin> = None;
     let mut green_timer = 0.0_f32;
 
     const MIN_GREEN_TIME: f32 = 0.1;
+    const MAX_GREEN_TIME: f32 = 6.0;
     const CENTER_HALF: f32 = 55.0;
 
     let lane_length = 400.0_f32;
@@ -59,8 +61,15 @@ async fn main() {
         let dt = get_frame_time();
         green_timer += dt;
 
+        // Max timer expired: cut green immediately so no more cars enter,
+        // then wait for the intersection to clear before switching.
+        if active_green.is_some() && green_timer >= MAX_GREEN_TIME {
+            last_green   = active_green;
+            active_green = None;
+        }
+
         let should_switch = match active_green {
-            None    => true,
+            None    => center_empty,
             Some(_) => center_empty && green_timer >= MIN_GREEN_TIME,
         };
 
@@ -69,6 +78,11 @@ async fn main() {
             let mut best_score = -1.0;
 
             for lane in [Origin::North, Origin::South, Origin::East, Origin::West] {
+                // Skip the lane we just forced off so it doesn't get green again immediately.
+                if Some(lane) == last_green {
+                    continue;
+                }
+
                 let cars_in_lane = match lane {
                     Origin::North => n_c,
                     Origin::South => s_c,
@@ -81,7 +95,6 @@ async fn main() {
                 }
 
                 let score = ratios[&lane];
-
                 if score > best_score {
                     best_score = score;
                     best_lane  = Some(lane);
@@ -91,6 +104,12 @@ async fn main() {
             if best_lane.is_some() {
                 active_green = best_lane;
                 green_timer  = 0.0;
+                last_green   = None;
+            } else {
+                // No other lane is waiting; give green back to the forced-off lane.
+                active_green = last_green;
+                green_timer  = 0.0;
+                last_green   = None;
             }
         }
 

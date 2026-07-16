@@ -1,8 +1,3 @@
-// ─────────────────────────────────────────────
-// TODO — Person A implements this file
-// Defines: Route enum, Origin enum, Car struct
-// ─────────────────────────────────────────────
-
 use macroquad::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -27,4 +22,5 @@ pub struct Car {
     pub route: Route,
     pub color: Color,
     pub turned: bool,
+    pub in_intersection: bool,
 }

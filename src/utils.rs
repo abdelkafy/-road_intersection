@@ -5,7 +5,10 @@ use crate::types::*;
 
 const LANE_OFFSET: f32 = 20.0; 
 const ROAD_HALF:   f32 = 40.0; 
-const CAR_SPEED:   f32 = 2.0;
+const CHECK_ZONE_WIDTH: f32 = 20.0; 
+const ZONE_HALF: f32 = ROAD_HALF + CHECK_ZONE_WIDTH; 
+const CAR_SPEED: f32 = 2.0;
+const SAFE_DISTANCE: f32 = 40.0; 
 
 const COLOR_STRAIGHT: Color = GREEN;
 const COLOR_RIGHT:    Color = YELLOW;
@@ -27,20 +30,20 @@ pub fn draw_intersection_lines(center: Vec2) {
         draw_line(cx + ROAD_HALF, y, w,              y, 1.5, WHITE);
     }
 
-    draw_line(cx - ROAD_HALF, cy - ROAD_HALF, cx,             cy - ROAD_HALF, 3.0, WHITE); // North
-    draw_line(cx,             cy + ROAD_HALF, cx + ROAD_HALF,  cy + ROAD_HALF, 3.0, WHITE); // South
-    draw_line(cx - ROAD_HALF, cy,             cx - ROAD_HALF,  cy + ROAD_HALF, 3.0, WHITE); // East
-    draw_line(cx + ROAD_HALF, cy - ROAD_HALF, cx + ROAD_HALF,  cy,            3.0, WHITE); // West
+    draw_line(cx - ROAD_HALF, cy - ROAD_HALF, cx,             cy - ROAD_HALF, 3.0, WHITE); 
+    draw_line(cx,             cy + ROAD_HALF, cx + ROAD_HALF,  cy + ROAD_HALF, 3.0, WHITE); 
+    draw_line(cx - ROAD_HALF, cy,             cx - ROAD_HALF,  cy + ROAD_HALF, 3.0, WHITE); 
+    draw_line(cx + ROAD_HALF, cy - ROAD_HALF, cx + ROAD_HALF,  cy,            3.0, WHITE);
 }
 
 pub fn draw_corrected_lights(center: Vec2, active: Option<Origin>) {
     let cx = center.x;
     let cy = center.y;
     let lights = [
-        (Origin::North, vec2(cx - ROAD_HALF - 20.0, cy - ROAD_HALF - 20.0)), // top-left  grass
-        (Origin::West,  vec2(cx + ROAD_HALF + 20.0, cy - ROAD_HALF - 20.0)), // top-right grass
-        (Origin::East,  vec2(cx - ROAD_HALF - 20.0, cy + ROAD_HALF + 20.0)), // bot-left  grass
-        (Origin::South, vec2(cx + ROAD_HALF + 20.0, cy + ROAD_HALF + 20.0)), // bot-right grass
+        (Origin::North, vec2(cx - ROAD_HALF - 20.0, cy - ROAD_HALF - 20.0)),
+        (Origin::West,  vec2(cx + ROAD_HALF + 20.0, cy - ROAD_HALF - 20.0)), 
+        (Origin::East,  vec2(cx - ROAD_HALF - 20.0, cy + ROAD_HALF + 20.0)), 
+        (Origin::South, vec2(cx + ROAD_HALF + 20.0, cy + ROAD_HALF + 20.0)), 
     ];
     for (origin, pos) in lights {
         let color = if active == Some(origin) { GREEN } else { RED };
@@ -48,14 +51,20 @@ pub fn draw_corrected_lights(center: Vec2, active: Option<Origin>) {
         draw_rectangle_lines(pos.x - 15.0, pos.y - 15.0, 30.0, 30.0, 1.5, BLACK);
     }
 }
-pub fn is_ahead(pos: Vec2, speed: Vec2, other: Vec2) -> bool {
-    let to_other = other - pos;
-    let forward = to_other.dot(speed);
-    if forward <= 0.0 { return false; }
-    let speed_sq = speed.dot(speed);
-    if speed_sq < 0.001 { return false; }
-    let lateral_sq = to_other.dot(to_other) - (forward * forward) / speed_sq;
-    lateral_sq < LANE_OFFSET * LANE_OFFSET
+
+pub fn is_blocking(car: &Car, other: &Car) -> bool {
+    if car.pos.distance(other.pos) >= SAFE_DISTANCE {
+        return false;
+    }
+    if car.speed.x != 0.0 {
+        let ahead = (other.pos.x - car.pos.x) * car.speed.x > 0.0;
+        let same_lane = (other.pos.y - car.pos.y).abs() < LANE_OFFSET;
+        ahead && same_lane
+    } else {
+        let ahead = (other.pos.y - car.pos.y) * car.speed.y > 0.0;
+        let same_lane = (other.pos.x - car.pos.x).abs() < LANE_OFFSET;
+        ahead && same_lane
+    }
 }
 
 pub fn update_turning_direction(car: &mut Car, center: Vec2) {
@@ -90,6 +99,35 @@ pub fn update_turning_direction(car: &mut Car, center: Vec2) {
     car.turned = true;
 }
 
+fn is_in_check_zone(car: &Car, center: Vec2) -> bool {
+    match car.origin {
+        Origin::South => car.pos.y > center.y + ROAD_HALF && car.pos.y < center.y + ZONE_HALF,
+        Origin::North => car.pos.y < center.y - ROAD_HALF && car.pos.y > center.y - ZONE_HALF,
+        Origin::East  => car.pos.x < center.x - ROAD_HALF && car.pos.x > center.x - ZONE_HALF,
+        Origin::West  => car.pos.x > center.x + ROAD_HALF && car.pos.x < center.x + ZONE_HALF,
+    }
+}
+
+fn has_left_intersection(car: &Car, center: Vec2) -> bool {
+    (car.pos.x - center.x).abs() >= ZONE_HALF || (car.pos.y - center.y).abs() >= ZONE_HALF
+}
+
+pub fn apply_traffic_light(car: &mut Car, center: Vec2, active_green: Option<Origin>) -> bool {
+    if car.in_intersection {
+        if has_left_intersection(car, center) {
+            car.in_intersection = false;
+        }
+        return true;
+    }
+    if is_in_check_zone(car, center) {
+        if Some(car.origin) == active_green {
+            car.in_intersection = true;
+        } else {
+            return false;
+        }
+    }
+    true
+}
 
 pub fn handle_input(
     cars: &mut Vec<Car>,
@@ -120,7 +158,7 @@ pub fn handle_input(
         let color = route_color(route);
         let cx = center.x;
         let cy = center.y;
-        let spawn_gap = 20.0 + 25.0 + 5.0; // vehicle_length + safety_gap + buffer
+        let spawn_gap = 20.0 + 25.0 + 5.0; 
 
         let (pos, speed) = match origin {
             Origin::North => {
@@ -156,7 +194,7 @@ pub fn handle_input(
                 (vec2(x.max(screen_width() + 30.0), cy - LANE_OFFSET), vec2(-CAR_SPEED, 0.0))
             }
         };
-        cars.push(Car { pos, speed, origin, route, color, turned: false });
+        cars.push(Car { pos, speed, origin, route, color, turned: false, in_intersection: false });
     }
 
     if is_key_pressed(KeyCode::Up)    && counts[1] < lane_capacity { spawn(cars, center, Origin::South); }

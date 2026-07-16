@@ -23,7 +23,7 @@ async fn main() {
 
     const MIN_GREEN_TIME: f32 = 0.1;
     const MAX_GREEN_TIME: f32 = 6.0;
-    const CENTER_HALF: f32 = 55.0;
+    const CENTER_HALF: f32 = 40.0;
 
     let lane_length = 400.0_f32;
     let vehicle_length = 20.0_f32;
